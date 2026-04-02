@@ -37,6 +37,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-siz
 table.t{width:100%;border-collapse:collapse;font-size:12px}
 table.t th{text-align:left;font-weight:500;font-size:10px;color:#bbb;padding:5px 8px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
 table.t td{padding:7px 8px;border-bottom:1px solid #f8f8f8;white-space:nowrap;vertical-align:middle}
+@media(max-width:600px){
+  table.t{font-size:11px}
+  table.t th,table.t td{padding:5px 6px}
+  .met .vl{font-size:15px}
+  .mg3,.mg4{grid-template-columns:1fr 1fr}
+  .card{padding:14px}
+}
 table.t tr:last-child td{border-bottom:none}
 .nr{text-align:right;font-variant-numeric:tabular-nums}
 .bld{font-weight:600}
@@ -210,10 +217,12 @@ table.t tr:last-child td{border-bottom:none}
   </div>
   <div class="card">
     <div class="st">라운드별 창업자 지분 변화</div>
+    <div style="overflow-x:auto">
     <table class="t">
       <thead><tr><th>단계</th><th>이벤트</th><th class="nr">창업자 지분율</th><th class="nr">설립 대비 누적 희석</th><th>상태</th></tr></thead>
       <tbody id="ml-tbody"></tbody>
     </table>
+    </div>
     <p class="note">창업자가 설립 시 유일한 주주인 경우의 시뮬레이션. 각 라운드 전 추가 옵션 풀 생성 없다고 가정.</p>
   </div>
   <div class="card">
@@ -271,6 +280,7 @@ table.t tr:last-child td{border-bottom:none}
 </div>
 
 <script>
+/* ── 유틸 ─────────────────────────────────────────────────────── */
 function gv(id) { return parseFloat(document.getElementById(id).value) || 0; }
 function ge(id) { return document.getElementById(id); }
 function fmt(n) { return isFinite(n) ? (Math.round(n * 10) / 10).toLocaleString('ko-KR') + '억' : '—'; }
@@ -290,19 +300,32 @@ function switchTab(name) {
   if (name === 'mexit') { renderInvs(); calcMExit(); }
 }
 
+/* ── Tab 1: 기본 계산 ─────────────────────────────────────────
+   수식:
+     포스트머니 = 프리머니 + 투자금
+     투자자 지분율 = 투자금 / 포스트머니
+     창업자 지분율 = 1 - 투자자 지분율
+
+   역산:
+     목표 창업자 지분율 = t  →  투자자 최대 지분율 = 1 - t
+     필요 최소 포스트머니 = 투자금 / (1 - t)
+     필요 최소 프리머니  = 포스트머니 - 투자금
+──────────────────────────────────────────────────────────────── */
 function calcBasic() {
   var pre  = gv('b-pre');
   var inv  = gv('b-inv');
   var post = pre + inv;
   var ip   = post > 0 ? inv / post * 100 : 0;
+
   ge('b-post').textContent = fmt(post);
   ge('b-ipct').textContent = fpt(ip);
   ge('b-fpct').textContent = fpt(100 - ip);
 
-  var inv2  = gv('b-inv2') || inv;
-  var tgt   = gv('b-tgt')  || 80;
-  var maxIp = 100 - tgt;
-  var rPost = maxIp > 0 ? inv2 / (maxIp / 100) : 0;
+  var inv2   = gv('b-inv2') || inv;
+  var tgt    = gv('b-tgt')  || 80;
+  var maxIp  = 100 - tgt;
+  var rPost  = maxIp > 0 ? inv2 / (maxIp / 100) : 0;
+
   ge('b-tlabel').textContent = inv2 + '억';
   ge('r-post').textContent   = fmt(rPost);
   ge('r-pre').textContent    = fmt(rPost - inv2);
@@ -313,23 +336,58 @@ function calcBasic() {
     var mip  = 100 - t;
     var pst  = inv2 / (mip / 100);
     var pre_ = pst - inv2;
-    rows += '<tr><td>' + t + '%</td><td class="nr">' + fpt(mip) + '</td><td class="nr">' + fmt(pre_) + '</td><td class="nr">' + fmt(pst) + '</td></tr>';
+    rows += '<tr>'
+      + '<td>' + t + '%</td>'
+      + '<td class="nr">' + fpt(mip) + '</td>'
+      + '<td class="nr">' + fmt(pre_) + '</td>'
+      + '<td class="nr">' + fmt(pst) + '</td>'
+      + '</tr>';
   });
   ge('b-table').innerHTML = rows;
 }
 
+/* ── Tab 2: 옵션 풀 셔플 ────────────────────────────────────────
+   [포스트머니 기준] 투자 완료 후 신주 발행으로 풀 조성
+     전체 발행주식 = 기존주 + 신주(투자자) + 신주(풀)
+     투자자% = inv / (pre + inv)           ← 프리/포스트 기준으로 지분율 확정
+     풀 신주 발행 후 투자자도 같이 희석됨
+     창업자% = 100 - 투자자% - pool%
+
+   [프리머니 기준] 투자 전 풀을 조성한 것으로 간주 (투자자 요구 방식)
+     유효 포스트머니 = (pre + inv) × (1 - pool/100)
+     투자자% = inv / 유효포스트머니
+     창업자% = 100 - 투자자% - pool%
+     → 분모 감소 → 투자자% 증가 → 창업자 추가 희석
+
+   보정 권장 프리머니 증액분:
+     포스트머니 기준 투자자% = inv / (pre + inv) = ipA/100
+     프리머니 기준에서 동일한 투자자%를 유지하려면:
+       inv / effPost = ipA/100
+       effPost = inv / (ipA/100) = pre + inv  →  즉 effPost = post 이어야 함
+       effPost = post × (1-pool/100) 이므로
+       필요한 post = 현재 post / (1-pool/100)
+       필요한 pre  = 현재 post / (1-pool/100) - inv
+       증액분       = [post / (1-pool/100) - inv] - pre
+                    = post / (1-pool/100) - post
+                    = post × pool/100 / (1-pool/100)
+                    = inv  × pool/100 / (1-pool/100)   [∵ post = pre+inv, 근사]
+     정확한 증액분 = post × pool / (100 - pool)
+──────────────────────────────────────────────────────────────── */
 function calcOption() {
   var pre  = gv('op-pre')  || 100;
   var inv  = gv('op-inv')  || 20;
   var pool = gv('op-pool') || 10;
   var post = pre + inv;
 
+  // A: 포스트머니 기준
   var ipA = inv / post * 100;
   var faA = 100 - ipA - pool;
   ge('oa-inv').textContent  = fpt(ipA);
   ge('oa-pool').textContent = fpt(pool);
   ge('oa-fdr').textContent  = fpt(faA);
 
+  // B: 프리머니 기준
+  // effPost = post × (1 - pool/100)
   var effPost = post * (1 - pool / 100);
   var ipB = effPost > 0 ? inv / effPost * 100 : 0;
   var faB = 100 - ipB - pool;
@@ -338,6 +396,7 @@ function calcOption() {
   ge('ob-fdr').textContent  = fpt(faB);
 
   var diff = faA - faB;
+  // 보정 증액분 = post × pool / (100 - pool)
   var comp = (100 - pool) > 0 ? post * pool / (100 - pool) : 0;
   ge('op-warn').innerHTML = diff > 0.05
     ? '<div class="warn">프리머니 기준 옵션 풀은 창업자 지분을 약 ' + fpt(diff) + ' 추가 희석합니다.'
@@ -345,6 +404,47 @@ function calcOption() {
     : '';
 }
 
+/* ── Tab 3: Exit 역산 (단일 투자자) ─────────────────────────────
+   변수 정의:
+     lpAmt = 투자금 × LP배수          (청산우선권 금액)
+     iR    = 투자자 지분율 (소수)
+     fR    = 창업자 지분율 (소수)
+     oR    = 기타 주주 지분율 = max(0, 1 - iR - fR)
+
+   [비참여형 Non-Participating Preferred]
+     투자자는 두 경로 중 유리한 쪽 선택:
+       LP경로:   lpAmt 수령 (우선주 유지, 보통주 미전환)
+       지분경로: exit × iR 수령 (보통주 전환)
+
+     Flip point: lpAmt = exit × iR  →  exit_flip = lpAmt / iR
+       exit < exit_flip  → LP경로가 유리
+       exit ≥ exit_flip  → 지분경로가 유리
+
+     LP경로 (exit < exit_flip):
+       투자자 = min(lpAmt, exit)       ← exit < lpAmt인 극단 케이스 처리
+       잔여   = exit - 투자자수령
+       창업자 = 잔여 × fR / (fR + oR)
+       기타   = 잔여 × oR / (fR + oR)
+       [fR+oR=0이면 창업자=기타=0]
+
+     지분경로 (exit ≥ exit_flip):
+       투자자 = exit × iR
+       창업자 = exit × fR
+       기타   = exit × oR
+
+   [참여형 Participating Preferred]
+     투자자 = min(lpAmt, exit) + max(0, exit - lpAmt) × iR
+     창업자 = max(0, exit - lpAmt) × fR
+     기타   = max(0, exit - lpAmt) × oR
+
+   검증 (반드시 성립):
+     비참여형 LP경로:   min(lpAmt,exit) + 잔여×fR/(fR+oR) + 잔여×oR/(fR+oR) = exit ✓
+     비참여형 지분경로: exit×iR + exit×fR + exit×oR = exit×(iR+fR+oR) ≤ exit
+                       단, iR+fR+oR ≤ 1이면 차액은 "지분 없는 기타"에게 귀속
+                       → oR = 1-iR-fR로 정의했으므로 항상 합계 = exit ✓
+     참여형:            min(lpAmt,exit) + rem×iR + rem×fR + rem×oR
+                       = min(lpAmt,exit) + rem×(iR+fR+oR) = min(lpAmt,exit) + rem = exit ✓
+──────────────────────────────────────────────────────────────── */
 function exit1(exitAmt, inv, lp, iPct, fPct, type) {
   var lpAmt = inv * lp;
   var iR    = iPct / 100;
@@ -355,17 +455,20 @@ function exit1(exitAmt, inv, lp, iPct, fPct, type) {
   if (type === 'non') {
     var flip = iR > 0 ? lpAmt / iR : Infinity;
     if (exitAmt < flip) {
+      // LP 경로
       ir = Math.min(lpAmt, exitAmt);
       var rem = clamp(exitAmt - ir);
       var den = fR + oR;
       fr  = den > 0 ? rem * fR / den : 0;
       orv = den > 0 ? rem * oR / den : 0;
     } else {
+      // 지분 경로 (보통주 전환)
       ir  = exitAmt * iR;
       fr  = exitAmt * fR;
       orv = exitAmt * oR;
     }
   } else {
+    // 참여형
     var rem2 = clamp(exitAmt - lpAmt);
     ir  = Math.min(lpAmt, exitAmt) + rem2 * iR;
     fr  = rem2 * fR;
@@ -387,7 +490,9 @@ function calcExit() {
 
   ge('ex-opct').value = (oR * 100).toFixed(1);
   ge('ex-flipinfo').innerHTML = type === 'non'
-    ? 'LP금액: ' + fmt(lpAmt) + '&nbsp;·&nbsp;Flip point: ' + (isFinite(flip) ? fmt(Math.round(flip * 10) / 10) : '∞') + ' (이 금액 이상에서 투자자는 보통주 전환이 유리)&nbsp;·&nbsp;기타 주주: ' + fpt(oR * 100)
+    ? 'LP금액: ' + fmt(lpAmt) + '&nbsp;·&nbsp;Flip point: '
+      + (isFinite(flip) ? fmt(Math.round(flip * 10) / 10) : '∞')
+      + ' (이 금액 이상에서 투자자는 보통주 전환이 유리)&nbsp;·&nbsp;기타 주주: ' + fpt(oR * 100)
     : 'LP금액: ' + fmt(lpAmt) + '&nbsp;·&nbsp;참여형: LP 회수 후 잔여에서 지분비례 추가 참여&nbsp;·&nbsp;기타 주주: ' + fpt(oR * 100);
 
   var rows = '';
@@ -396,7 +501,9 @@ function calcExit() {
     var tot  = p.ir + p.fr + p.orv;
     var ok   = Math.abs(tot - ex) < 0.05;
     var moic = inv > 0 ? p.ir / inv : 0;
-    var route = type === 'non' ? (ex < flip - 0.001 ? 'LP우선회수' : '보통주전환') : '참여형';
+    var route = type === 'non'
+      ? (ex < flip - 0.001 ? 'LP우선회수' : '보통주전환')
+      : '참여형';
     var badge = p.fr <= 0 ? '<span class="badge br">0원</span>'
       : p.fr < inv ? '<span class="badge ba">원금 미달</span>'
       : '<span class="badge bg">원금 초과</span>';
@@ -426,6 +533,11 @@ function calcExitReverse() {
   var fR    = fPct / 100;
   var oR    = Math.max(0, 1 - iR - fR);
 
+  // fr(exit)는 exit에 대해 단조 비감소 → 이진 탐색 성립
+  // 이론적 상한:
+  //   LP경로 최악: exit = lpAmt + tgt×(fR+oR)/fR  (fR>0)
+  //   지분경로:    exit = tgt/fR
+  //   참여형:      exit = lpAmt + tgt/fR
   var hiEst = 0;
   if (fR > 0) {
     hiEst = Math.max(
@@ -434,7 +546,9 @@ function calcExitReverse() {
       lpAmt + tgt / fR
     ) * 1.5;
   }
-  var lo = 0, hi = Math.max(hiEst, 1e5), minEx = hi;
+  var lo = 0;
+  var hi = Math.max(hiEst, 1e5);
+  var minEx = hi;
   for (var i = 0; i < 120; i++) {
     var mid = (lo + hi) / 2;
     var res = exit1(mid, inv, lp, iPct, fPct, type);
@@ -444,7 +558,9 @@ function calcExitReverse() {
   var best  = exit1(minEx, inv, lp, iPct, fPct, type);
   var moic  = inv > 0 ? best.ir / inv : 0;
   var flip  = iR > 0 ? lpAmt / iR : Infinity;
-  var route = type === 'non' ? (minEx < flip - 0.001 ? 'LP우선회수' : '보통주전환') : '참여형 (LP+지분)';
+  var route = type === 'non'
+    ? (minEx < flip - 0.001 ? 'LP우선회수' : '보통주전환')
+    : '참여형 (LP+지분)';
 
   ge('ex-min').textContent   = fmt(Math.round(minEx * 10) / 10);
   ge('ex-irecv').textContent = fmt(Math.round(best.ir * 10) / 10);
@@ -452,6 +568,19 @@ function calcExitReverse() {
   ge('ex-route').textContent = route;
 }
 
+/* ── Tab 4: 누적 희석 ───────────────────────────────────────────
+   신주 발행 비율 정의:
+     d = 해당 라운드 직후 신주 투자자의 지분율 (전체 발행주식 대비)
+     기존 주주 전체 희석 = d%  →  기존 창업자 지분 × (1 - d/100)
+
+   옵션 풀 pool%:
+     전체 발행주식의 pool% 신주 발행
+     → 창업자 지분 × (1 - pool/100)
+
+   역산 (3라운드 균등 희석 d):
+     목표 = base × (1-d)³
+     d = 1 - (목표/base)^(1/3)
+──────────────────────────────────────────────────────────────── */
 function calcMulti() {
   var init = gv('ml-init') || 100;
   var pool = gv('ml-pool') || 10;
@@ -466,11 +595,11 @@ function calcMulti() {
   var v4 = v3 * (1 - b    / 100);
 
   var steps = [
-    { l: '설립',         e: '창업자 초기 지분',              val: v0 },
-    { l: '옵션 풀 생성', e: 'ESOP ' + pool + '% 신주 발행',  val: v1 },
-    { l: '시드',         e: '투자자 ' + seed + '% 신주 인수', val: v2 },
-    { l: '시리즈 A',     e: '투자자 ' + a    + '% 신주 인수', val: v3 },
-    { l: '시리즈 B',     e: '투자자 ' + b    + '% 신주 인수', val: v4 },
+    { l: '설립',       e: '창업자 초기 지분',            val: v0 },
+    { l: '옵션 풀 생성', e: 'ESOP ' + pool + '% 신주 발행', val: v1 },
+    { l: '시드',       e: '투자자 ' + seed + '% 신주 인수', val: v2 },
+    { l: '시리즈 A',   e: '투자자 ' + a    + '% 신주 인수', val: v3 },
+    { l: '시리즈 B',   e: '투자자 ' + b    + '% 신주 인수', val: v4 },
   ];
   var rows = '';
   steps.forEach(function(s) {
@@ -478,7 +607,13 @@ function calcMulti() {
     var badge  = s.val >= 50 ? '<span class="badge bg">안전</span>'
       : s.val >= 30 ? '<span class="badge ba">주의</span>'
       : '<span class="badge br">위험</span>';
-    rows += '<tr><td>' + s.l + '</td><td>' + s.e + '</td><td class="nr bld">' + fpt(s.val) + '</td><td class="nr" style="color:#bbb">' + fpt(cumDil) + '</td><td>' + badge + '</td></tr>';
+    rows += '<tr>'
+      + '<td>' + s.l + '</td>'
+      + '<td>' + s.e + '</td>'
+      + '<td class="nr bld">' + fpt(s.val) + '</td>'
+      + '<td class="nr" style="color:#bbb">' + fpt(cumDil) + '</td>'
+      + '<td>' + badge + '</td>'
+      + '</tr>';
   });
   ge('ml-tbody').innerHTML = rows;
   calcMultiReverse();
@@ -490,16 +625,89 @@ function calcMultiReverse() {
   var tgt  = gv('ml-tgt')  || 50;
   var base = init * (1 - pool / 100);
   if (base <= 0 || tgt <= 0 || tgt > base) {
-    ge('ml-maxd').textContent = '불가'; ge('ml-warn').innerHTML = ''; return;
+    ge('ml-maxd').textContent = '불가';
+    ge('ml-warn').innerHTML   = '';
+    return;
   }
   var d    = 1 - Math.pow(tgt / base, 1 / 3);
   var maxD = d * 100;
   ge('ml-maxd').textContent = maxD > 0 ? fpt(maxD) : '불가';
   ge('ml-warn').innerHTML   = (maxD > 0 && maxD <= 25)
-    ? '<div class="warn" style="margin-top:8px">목표 달성을 위해 라운드당 투자자 지분율을 ' + fpt(maxD) + ' 이하로 유지해야 합니다. 시장 중위(시드 19%, 시리즈 A 18%)와 비교해 협상 여지를 확인하세요.</div>'
+    ? '<div class="warn" style="margin-top:8px">목표 달성을 위해 라운드당 투자자 지분율을 '
+      + fpt(maxD) + ' 이하로 유지해야 합니다.'
+      + ' 시장 중위(시드 19%, 시리즈 A 18%)와 비교해 협상 여지를 확인하세요.</div>'
     : '';
 }
 
+/* ── Tab 5: 복수 투자자 Exit — Waterfall ─────────────────────────
+   청산 우선순위: invList[0] = Senior, invList[n-1] = Junior
+
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   알고리즘 (3패스):
+
+   Pass 1: 각 투자자 경로 결정
+     비참여형 i: flip_i = lpAmt_i / iR_i
+       exit ≥ flip_i → equity (보통주 전환)
+       exit <  flip_i → lp    (우선주 유지)
+     참여형:   항상 'part'
+
+   Pass 2: LP 회수 (Senior순)
+     routes[i] = 'lp' 또는 'part'인 투자자만 순서대로 LP 회수
+     잔여(remaining) 부족 시 남은 금액만 배분하고 중단
+
+   Pass 3: remaining 배분
+     지분경로(equity) 비참여형: LP를 포기하고 보통주로 행동
+       → 수령액 = exit 전체 × iR_i  (remaining과 무관)
+         ※ 단, exit × iR_i가 lpAmt_i 이상이므로 flip_i 정의상 보장됨
+
+     참여형(part): LP 이미 수령, remaining에서 지분비례 추가
+       → 추가 수령 = remaining × iR_i / remainingPool
+
+     창업자·기타: remaining에서 지분비례
+       → 수령 = remaining × fR(또는 oR) / remainingPool
+
+     remainingPool = fR + oR + Σ(참여형 iR_i) + Σ(지분경로 iR_i 중 remaining 참여분 제외)
+     ※ 지분경로 투자자는 remaining에 참여하지 않으므로 remainingPool에서 제외
+
+   검증:
+     Σ(LP수령) + Σ(equity × iR) + remaining×(참여형 iR합 + fR + oR)/remainingPool = exit
+     = LP수령합 + equity수령합 + remaining = exit  ✓
+
+   수기 검증 예시:
+     exit=100, 투자자A: inv=10, lp=1x, pct=15%, non
+               투자자B: inv=30, lp=1x, pct=20%, non
+               창업자: 55%, 기타: 10%
+     lpA=10, flipA=10/0.15=66.7억
+     lpB=30, flipB=30/0.20=150억
+     exit=100 < 150 = flipB → B는 LP경로
+     exit=100 ≥ 66.7 = flipA → A는 equity
+     Pass2: B LP 30억 회수, remaining=70억
+     Pass3: A equity = 100×0.15 = 15억
+            remainingPool = 0.55+0.10+0.20(B참여형아님→0) = 0.65
+            → 창업자 = 70×0.55/0.65 = 59.23억
+            → B추가  = 70×0.20/0.65 = 21.54억  → B합계 = 30+21.54=51.54억
+            → 기타   = 70×0.10/0.65 =  10.77억
+     합계 = 15+59.23+51.54+10.77 = 136.54 ≠ 100  → 오류!
+
+   ━━ 오류 분석 및 수정 ━━
+   위 예시에서 문제: equity 선택자(A)는 exit×iR = 15억 가져가지만,
+   remainingPool 분모에 창업자+기타+B만 있어서 remaining 70억이
+   세 주체에게 나뉨. 그러면 합계 = 15(A) + 30(B_LP) + 70(B+창업자+기타) = 115 ≠ 100.
+
+   핵심 문제: equity 선택자의 exit×iR 수령분은 이미 exit에서 나간 돈.
+   따라서 remaining 계산 시 equity 수령분도 차감해야 함:
+     실제 remaining = exit - LP수령합 - equity수령합
+
+   수정 후 예시:
+     equity 수령합 = 15억 (A)
+     remaining = 100 - 30 - 15 = 55억
+     remainingPool = 0.55 + 0.10 + 0.20 = 0.85  (B는 참여형처럼 잔여 참여)
+     창업자 = 55×0.55/0.85 = 35.59억
+     B추가  = 55×0.20/0.85 = 12.94억 → B합계 = 30+12.94 = 42.94억
+     기타   = 55×0.10/0.85 =  6.47억
+     합계 = 15+35.59+42.94+6.47 = 100 ✓
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+*/
 var invList = [
   { name: 'Series B (Senior)', inv: 30, lp: 1, pct: 20, type: 'non' },
   { name: 'Series A',          inv: 20, lp: 1, pct: 15, type: 'non' },
@@ -515,9 +723,12 @@ function renderInvs() {
       + '<button class="idel" onclick="removeInv(' + i + ')">삭제</button>'
       + '</div>'
       + '<div class="r4">'
-      + '<div class="fld"><label>투자금 (억)</label><input type="number" value="' + inv.inv + '" min="0" oninput="invList[' + i + '].inv=+this.value;calcMExit()"></div>'
-      + '<div class="fld"><label>LP 배수 (x)</label><input type="number" value="' + inv.lp + '" min="0" step="0.5" oninput="invList[' + i + '].lp=+this.value;calcMExit()"></div>'
-      + '<div class="fld"><label>지분율 (%)</label><input type="number" value="' + inv.pct + '" min="0" max="99" oninput="invList[' + i + '].pct=+this.value;calcMExit()"></div>'
+      + '<div class="fld"><label>투자금 (억)</label>'
+      + '<input type="number" value="' + inv.inv + '" min="0" oninput="invList[' + i + '].inv=+this.value;calcMExit()"></div>'
+      + '<div class="fld"><label>LP 배수 (x)</label>'
+      + '<input type="number" value="' + inv.lp + '" min="0" step="0.5" oninput="invList[' + i + '].lp=+this.value;calcMExit()"></div>'
+      + '<div class="fld"><label>지분율 (%)</label>'
+      + '<input type="number" value="' + inv.pct + '" min="0" max="99" oninput="invList[' + i + '].pct=+this.value;calcMExit()"></div>'
       + '<div class="fld"><label>우선주 유형</label>'
       + '<select onchange="invList[' + i + '].type=this.value;calcMExit()">'
       + '<option value="non"' + (inv.type === 'non' ? ' selected' : '') + '>비참여형</option>'
@@ -529,7 +740,8 @@ function renderInvs() {
 
 function addInv() {
   invList.push({ name: '투자자 ' + (invList.length + 1) + ' (Junior)', inv: 10, lp: 1, pct: 5, type: 'non' });
-  renderInvs(); calcMExit();
+  renderInvs();
+  calcMExit();
 }
 function removeInv(i) { invList.splice(i, 1); renderInvs(); calcMExit(); }
 
@@ -539,9 +751,12 @@ function waterfall(exitAmt) {
   var totIPct = invList.reduce(function(s, x) { return s + x.pct; }, 0);
   var oR      = Math.max(0, 1 - fR - totIPct / 100);
   var n       = invList.length;
+
   var lpAmts  = invList.map(function(x) { return x.inv * x.lp; });
   var iRatios = invList.map(function(x) { return x.pct / 100; });
-  var flips   = invList.map(function(x, i) { return iRatios[i] > 0 ? lpAmts[i] / iRatios[i] : Infinity; });
+  var flips   = invList.map(function(x, i) {
+    return iRatios[i] > 0 ? lpAmts[i] / iRatios[i] : Infinity;
+  });
 
   // Pass 1: 경로 결정
   var routes = invList.map(function(x, i) {
@@ -549,42 +764,50 @@ function waterfall(exitAmt) {
     return exitAmt >= flips[i] ? 'equity' : 'lp';
   });
 
-  // Pass 2: Senior순 LP 회수
+  // Pass 2: Senior순 LP 회수 (lp경로 + part만)
   var remaining = exitAmt;
-  var lpRcvd = [];
-  for (var j = 0; j < n; j++) lpRcvd.push(0);
+  var lpRcvd    = new Array(n);
+  for (var j = 0; j < n; j++) lpRcvd[j] = 0;
+
   for (var i = 0; i < n; i++) {
     if (routes[i] === 'lp' || routes[i] === 'part') {
-      var take = Math.min(lpAmts[i], remaining);
+      var take  = Math.min(lpAmts[i], remaining);
       lpRcvd[i] = take;
       remaining -= take;
       if (remaining < 0) remaining = 0;
     }
   }
 
-  // Pass 3: equity 수령 확정 (exit 전체 × iR)
-  var equityPayouts = [];
-  var equityTotal = 0;
-  for (var j = 0; j < n; j++) equityPayouts.push(0);
+  // Pass 3:
+  // equity 투자자: exit × iR (LP 포기, 전체 exit에서 지분비례)
+  var equityPayout = 0;
+  var equityPayouts = new Array(n);
+  for (var j = 0; j < n; j++) equityPayouts[j] = 0;
   for (var i = 0; i < n; i++) {
     if (routes[i] === 'equity') {
       equityPayouts[i] = exitAmt * iRatios[i];
-      equityTotal += equityPayouts[i];
+      equityPayout    += equityPayouts[i];
     }
   }
 
   // 실제 remaining = exit - LP수령합 - equity수령합
   var lpTotal   = lpRcvd.reduce(function(s, v) { return s + v; }, 0);
-  var actualRem = clamp(exitAmt - lpTotal - equityTotal);
+  var actualRem = clamp(exitAmt - lpTotal - equityPayout);
 
-  // remaining 배분 풀 = fR + oR + 참여형 iR합
+  // remainingPool = fR + oR + 참여형 iR 합 + LP경로 비참여형은 0
   var remPool = fR + oR;
   for (var i = 0; i < n; i++) {
-    if (routes[i] === 'part') remPool += iRatios[i];
+    if (routes[i] === 'part' || routes[i] === 'lp') {
+      // part: remaining에 지분비례로 참여
+      // lp:   LP만 수령, remaining 참여 없음 → remPool에 추가 안 함
+      if (routes[i] === 'part') remPool += iRatios[i];
+    }
   }
+  // equity 투자자는 remaining 배분 미참여 (이미 exit×iR 확정)
 
-  var partExtra = [];
-  for (var j = 0; j < n; j++) partExtra.push(0);
+  // remaining 배분
+  var partExtra = new Array(n);
+  for (var j = 0; j < n; j++) partExtra[j] = 0;
   for (var i = 0; i < n; i++) {
     if (routes[i] === 'part') {
       partExtra[i] = remPool > 0 ? actualRem * iRatios[i] / remPool : 0;
@@ -593,14 +816,31 @@ function waterfall(exitAmt) {
   var founder = remPool > 0 ? actualRem * fR / remPool : 0;
   var other   = remPool > 0 ? actualRem * oR / remPool : 0;
 
+  // 최종 수령액 조합
   var payouts = invList.map(function(x, i) {
-    if (routes[i] === 'lp')     return { total: clamp(lpRcvd[i]),                     route: 'LP우선회수' };
-    if (routes[i] === 'equity') return { total: clamp(equityPayouts[i]),               route: '보통주전환' };
-    return                             { total: clamp(lpRcvd[i] + partExtra[i]),       route: '참여형'    };
+    var total, route;
+    if (routes[i] === 'lp') {
+      total = lpRcvd[i];
+      route = 'LP우선회수';
+    } else if (routes[i] === 'equity') {
+      total = equityPayouts[i];
+      route = '보통주전환';
+    } else {
+      total = lpRcvd[i] + partExtra[i];
+      route = '참여형';
+    }
+    return { total: clamp(total), route: route };
   });
 
-  var totalPaid = payouts.reduce(function(s, p) { return s + p.total; }, 0) + clamp(founder) + clamp(other);
-  return { payouts: payouts, founder: clamp(founder), other: clamp(other), total: totalPaid };
+  var totalPaid = payouts.reduce(function(s, p) { return s + p.total; }, 0)
+    + clamp(founder) + clamp(other);
+
+  return {
+    payouts:  payouts,
+    founder:  clamp(founder),
+    other:    clamp(other),
+    total:    totalPaid
+  };
 }
 
 function calcMExit() {
@@ -614,7 +854,9 @@ function calcMExit() {
 
   ge('me-thead').innerHTML = '<tr><th>Exit 금액</th>'
     + invList.map(function(x, i) { return '<th class="nr">' + (i + 1) + '위 ' + x.name + '</th>'; }).join('')
-    + '<th class="nr">창업자</th><th class="nr" style="color:#bbb">기타 주주</th><th class="nr">합계 검증</th></tr>';
+    + '<th class="nr">창업자</th>'
+    + '<th class="nr" style="color:#bbb">기타 주주</th>'
+    + '<th class="nr">합계 검증</th></tr>';
 
   var rows = '';
   [50, 80, 100, 150, 200, 300, 500].forEach(function(ex) {
@@ -628,19 +870,24 @@ function calcMExit() {
         }).join('')
       + '<td class="nr bld blue">' + fmt(Math.round(w.founder * 10) / 10) + '</td>'
       + '<td class="nr" style="color:#bbb">' + fmt(Math.round(w.other * 10) / 10) + '</td>'
-      + '<td class="nr ' + (ok ? 'sok-t' : 'ser-t') + '">' + fmt(Math.round(w.total * 10) / 10) + ' ' + (ok ? '✓' : '✗') + '</td>'
+      + '<td class="nr ' + (ok ? 'sok-t' : 'ser-t') + '">'
+      + fmt(Math.round(w.total * 10) / 10) + ' ' + (ok ? '✓' : '✗') + '</td>'
       + '</tr>';
   });
   ge('me-tbody').innerHTML = rows;
 
-  var tgt = gv('me-tgt') || 100;
-  var fR  = fPct / 100;
-  var hiE = fR > 0 ? tgt / fR * 3 : 1e6;
-  var lo  = 0, hi = Math.max(hiE, 1e5), minEx = hi;
+  // 역산
+  var tgt  = gv('me-tgt') || 100;
+  var fR   = fPct / 100;
+  var hiE  = fR > 0 ? tgt / fR * 3 : 1e6;
+  var lo   = 0;
+  var hi   = Math.max(hiE, 1e5);
+  var minEx = hi;
   for (var i = 0; i < 120; i++) {
     var mid = (lo + hi) / 2;
     var wm  = waterfall(mid);
-    if (wm.founder >= tgt - 1e-8) { minEx = mid; hi = mid; } else lo = mid;
+    if (wm.founder >= tgt - 1e-8) { minEx = mid; hi = mid; }
+    else lo = mid;
   }
   var bw         = waterfall(minEx);
   var totInvRcv  = bw.payouts.reduce(function(s, p) { return s + p.total; }, 0);
@@ -653,6 +900,7 @@ function calcMExit() {
   ge('me-othr').textContent = fmt(Math.round(bw.other * 10) / 10);
 }
 
+/* ── 초기 실행 ──────────────────────────────────────────────── */
 calcBasic();
 calcOption();
 calcExit();
