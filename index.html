@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>딜 조건 역산 계산기 — 쿠키딜</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:14px;color:#1a1a1a;background:#f7f7f5;min-height:100vh}
+.wrap{max-width:720px;margin:0 auto;padding:32px 16px 64px}
+.header{margin-bottom:28px}
+.header h1{font-size:20px;font-weight:600;margin-bottom:6px}
+.header p{font-size:13px;color:#666}
+.logo{display:inline-block;font-size:13px;font-weight:700;color:#1a56db;margin-bottom:8px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid #e0e0e0;margin-bottom:24px;overflow-x:auto}
+.tab{padding:8px 16px;font-size:13px;cursor:pointer;border-radius:8px 8px 0 0;border:1px solid transparent;color:#888;white-space:nowrap;background:none}
+.tab.active{background:#fff;border-color:#e0e0e0;border-bottom-color:#fff;color:#1a1a1a;font-weight:500;margin-bottom:-1px}
+.panel{display:none}.panel.active{display:block}
+.card{background:#fff;border-radius:12px;border:1px solid #e8e8e8;padding:20px;margin-bottom:16px}
+.section-title{font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+@media(max-width:480px){.row,.row3{grid-template-columns:1fr}.mg{grid-template-columns:1fr 1fr !important}}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:12px;color:#666}
+.field input,.field select{padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:14px;color:#1a1a1a;background:#fff;width:100%;outline:none;transition:border-color .15s}
+.field input:focus,.field select:focus{border-color:#1a56db}
+.mg{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+.metric{background:#f7f7f5;border-radius:8px;padding:12px}
+.metric .lbl{font-size:11px;color:#888;margin-bottom:4px}
+.metric .val{font-size:20px;font-weight:600;color:#1a1a1a}
+.blue{color:#1a56db}.red{color:#c0392b}.green{color:#1e7e34}
+.divider{border:none;border-top:1px solid #f0f0f0;margin:16px 0}
+table.res{width:100%;border-collapse:collapse;font-size:13px}
+table.res th{text-align:left;font-weight:500;font-size:11px;color:#888;padding:6px 8px;border-bottom:1px solid #f0f0f0}
+table.res td{padding:8px;border-bottom:1px solid #f0f0f0}
+table.res tr:last-child td{border-bottom:none}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;font-weight:500}
+.bb{background:#e8f4fd;color:#1a56db}
+.bg{background:#e6f4ea;color:#1e7e34}
+.ba{background:#fef9e7;color:#b7770d}
+.br{background:#fdecea;color:#c0392b}
+.warn{font-size:12px;color:#7d3c0a;padding:10px 12px;background:#fdf0e6;border-radius:8px;margin-top:8px;border-left:3px solid #e67e22;line-height:1.6}
+.note{font-size:12px;color:#888;margin-top:8px;line-height:1.6}
+.footer{text-align:center;font-size:12px;color:#aaa;margin-top:40px;line-height:1.8}
+.footer a{color:#1a56db;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="header">
+  <div class="logo">*deal 쿠키딜</div>
+  <h1>딜 조건 역산 계산기</h1>
+  <p>투자 유치 협상 전, 창업자가 지켜야 할 조건을 역으로 설계하는 도구예요.</p>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('basic')">기본 계산</button>
+  <button class="tab" onclick="switchTab('option')">옵션 풀 셔플</button>
+  <button class="tab" onclick="switchTab('exit')">Exit 역산</button>
+  <button class="tab" onclick="switchTab('multi')">누적 희석</button>
+</div>
+
+<!-- 기본 계산 -->
+<div id="panel-basic" class="panel active">
+  <div class="card">
+    <div class="section-title">투자 조건 입력</div>
+    <div class="row">
+      <div class="field"><label>프리머니 밸류에이션 (억 원)</label><input type="number" id="b-pre" value="100" oninput="calcBasic()"></div>
+      <div class="field"><label>투자 금액 (억 원)</label><input type="number" id="b-inv" value="20" oninput="calcBasic()"></div>
+    </div>
+    <div class="mg">
+      <div class="metric"><div class="lbl">포스트머니</div><div class="val blue" id="b-post">120억</div></div>
+      <div class="metric"><div class="lbl">투자자 지분율</div><div class="val" id="b-inv-pct">16.7%</div></div>
+      <div class="metric"><div class="lbl">창업자 잔여 지분율</div><div class="val blue" id="b-founder-pct">83.3%</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-title">역산 — 목표 지분율로 프리머니 계산</div>
+    <div class="row">
+      <div class="field"><label>유지하고 싶은 창업자 지분율 (%)</label><input type="number" id="b-target" value="80" oninput="calcReverse()"></div>
+      <div class="field"><label>투자 금액 (억 원)</label><input type="number" id="b-inv2" value="20" oninput="calcReverse()"></div>
+    </div>
+    <div class="mg">
+      <div class="metric"><div class="lbl">필요 최소 포스트머니</div><div class="val blue" id="r-post">100억</div></div>
+      <div class="metric"><div class="lbl">필요 최소 프리머니</div><div class="val blue" id="r-pre">80억</div></div>
+      <div class="metric"><div class="lbl">투자자 최대 지분율</div><div class="val" id="r-inv-pct">20.0%</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-title">지분율별 필요 프리머니 (투자 20억 기준)</div>
+    <table class="res">
+      <thead><tr><th>목표 창업자 지분</th><th class="num">필요 프리머니</th><th class="num">포스트머니</th></tr></thead>
+      <tbody id="b-table"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 옵션 풀 셔플 -->
+<div id="panel-option" class="panel">
+  <div class="card">
+    <div class="section-title">조건 입력</div>
+    <div class="row3">
+      <div class="field"><label>프리머니 (억 원)</label><input type="number" id="op-pre" value="100" oninput="calcOption()"></div>
+      <div class="field"><label>투자 금액 (억 원)</label><input type="number" id="op-inv" value="20" oninput="calcOption()"></div>
+      <div class="field"><label>옵션 풀 크기 (%)</label><input type="number" id="op-pool" value="10" oninput="calcOption()"></div>
+    </div>
+  </div>
+  <div class="row" style="margin-bottom:0;align-items:start">
+    <div class="card" style="margin-bottom:0">
+      <div class="section-title green">포스트머니 기준 (창업자 유리)</div>
+      <div class="metric" style="margin-bottom:8px"><div class="lbl">투자자 지분</div><div class="val" id="op-a-inv">16.7%</div></div>
+      <div class="metric" style="margin-bottom:8px"><div class="lbl">옵션 풀</div><div class="val" id="op-a-pool">10.0%</div></div>
+      <div class="metric"><div class="lbl">창업자 잔여 지분</div><div class="val blue" id="op-a-founder">73.3%</div></div>
+    </div>
+    <div class="card" style="margin-bottom:0">
+      <div class="section-title red">프리머니 기준 (투자자 요구)</div>
+      <div class="metric" style="margin-bottom:8px"><div class="lbl">투자자 지분</div><div class="val" id="op-b-inv">18.2%</div></div>
+      <div class="metric" style="margin-bottom:8px"><div class="lbl">옵션 풀</div><div class="val" id="op-b-pool">10.0%</div></div>
+      <div class="metric"><div class="lbl">창업자 잔여 지분</div><div class="val red" id="op-b-founder">71.8%</div></div>
+    </div>
+  </div>
+  <div id="op-diff-box"></div>
+  <p class="note">프리머니 기준 옵션 풀은 유효 프리머니를 낮춰 창업자 주당 가치를 희석시킵니다. 포스트머니 기준으로 협상하거나, 채용 계획서를 근거로 풀 크기를 줄이세요.</p>
+</div>
+
+<!-- Exit 역산 -->
+<div id="panel-exit" class="panel">
+  <div class="card">
+    <div class="section-title">투자 조건 입력</div>
+    <div class="row3">
+      <div class="field"><label>투자 금액 (억 원)</label><input type="number" id="ex-inv" value="50" oninput="calcExit()"></div>
+      <div class="field"><label>청산우선권 배수 (x)</label><input type="number" id="ex-lp" value="1" step="0.5" oninput="calcExit()"></div>
+      <div class="field"><label>창업자 지분율 (%)</label><input type="number" id="ex-founder" value="60" oninput="calcExit()"></div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>우선주 유형</label>
+        <select id="ex-type" onchange="calcExit()">
+          <option value="non">비참여형 (Non-Participating)</option>
+          <option value="part">참여형 (Participating)</option>
+        </select>
+      </div>
+      <div class="field"><label>투자자 지분율 (%)</label><input type="number" id="ex-inv-pct" value="25" oninput="calcExit()"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-title">Exit 금액별 수령액 시뮬레이션</div>
+    <table class="res">
+      <thead><tr><th>Exit 금액</th><th class="num">투자자 수령</th><th class="num">창업자 수령</th><th>상태</th></tr></thead>
+      <tbody id="ex-table"></tbody>
+    </table>
+  </div>
+  <div class="card">
+    <div class="section-title">목표 수령액 역산</div>
+    <div class="row">
+      <div class="field"><label>창업자 목표 수령액 (억 원)</label><input type="number" id="ex-target" value="100" oninput="calcExitReverse()"></div>
+    </div>
+    <div class="mg">
+      <div class="metric"><div class="lbl">필요 최소 Exit 금액</div><div class="val blue" id="ex-min-exit">—</div></div>
+      <div class="metric"><div class="lbl">해당 시점 투자자 수령</div><div class="val" id="ex-inv-recv">—</div></div>
+      <div class="metric"><div class="lbl">투자자 MOIC</div><div class="val" id="ex-moic">—</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 누적 희석 -->
+<div id="panel-multi" class="panel">
+  <div class="card">
+    <div class="section-title">초기 조건</div>
+    <div class="row">
+      <div class="field"><label>창업자 초기 지분율 (%)</label><input type="number" id="ml-init" value="100" oninput="calcMulti()"></div>
+      <div class="field"><label>시드 전 옵션 풀 (%)</label><input type="number" id="ml-pool" value="10" oninput="calcMulti()"></div>
+    </div>
+    <div class="section-title" style="margin-top:12px">라운드별 희석률</div>
+    <div class="row3">
+      <div class="field"><label>시드 희석률 (%)</label><input type="number" id="ml-seed" value="20" oninput="calcMulti()"></div>
+      <div class="field"><label>시리즈 A 희석률 (%)</label><input type="number" id="ml-a" value="20" oninput="calcMulti()"></div>
+      <div class="field"><label>시리즈 B 희석률 (%)</label><input type="number" id="ml-b" value="20" oninput="calcMulti()"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-title">라운드별 창업자 지분 변화</div>
+    <table class="res">
+      <thead><tr><th>단계</th><th>이벤트</th><th class="num">창업자 지분율</th><th>상태</th></tr></thead>
+      <tbody id="ml-table"></tbody>
+    </table>
+  </div>
+  <div class="card">
+    <div class="section-title">목표 유지 지분율 역산</div>
+    <div class="row">
+      <div class="field"><label>시리즈 B 후 목표 지분율 (%)</label><input type="number" id="ml-target" value="50" oninput="calcMultiReverse()"></div>
+    </div>
+    <div class="mg">
+      <div class="metric"><div class="lbl">허용 라운드당 희석률 상한</div><div class="val blue" id="ml-max-dil">—</div></div>
+      <div class="metric"><div class="lbl">2025 시드 중위</div><div class="val green">19%</div></div>
+      <div class="metric"><div class="lbl">2025 시리즈 A 중위</div><div class="val green">18%</div></div>
+    </div>
+    <div id="ml-warn"></div>
+  </div>
+</div>
+
+<div class="footer">
+  쿠키딜(CookieDeal) · <a href="https://cookiedeal.io">cookiedeal.io</a><br>
+  본 계산기는 참고용이며 투자 의사결정의 근거로 사용할 수 없습니다.
+</div>
+
+</div>
+<script>
+function fmt(n){return(Math.round(n*10)/10).toLocaleString('ko-KR')+'억';}
+function fp(n){return(Math.round(n*10)/10).toFixed(1)+'%';}
+
+function switchTab(name){
+  var names=['basic','option','exit','multi'];
+  document.querySelectorAll('.tab').forEach(function(t,i){t.classList.toggle('active',names[i]===name);});
+  document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active');});
+  document.getElementById('panel-'+name).classList.add('active');
+}
+
+function calcBasic(){
+  var pre=parseFloat(document.getElementById('b-pre').value)||0;
+  var inv=parseFloat(document.getElementById('b-inv').value)||0;
+  var post=pre+inv;
+  var ip=post>0?(inv/post)*100:0;
+  document.getElementById('b-post').textContent=fmt(post);
+  document.getElementById('b-inv-pct').textContent=fp(ip);
+  document.getElementById('b-founder-pct').textContent=fp(100-ip);
+  var rows='';
+  [90,80,75,70,60].forEach(function(t){
+    var maxIp=100-t;
+    var minPost=20/(maxIp/100);
+    var minPre=minPost-20;
+    rows+='<tr><td>'+t+'%</td><td class="num">'+fmt(minPre)+'</td><td class="num">'+fmt(minPost)+'</td></tr>';
+  });
+  document.getElementById('b-table').innerHTML=rows;
+}
+
+function calcReverse(){
+  var t=parseFloat(document.getElementById('b-target').value)||80;
+  var inv=parseFloat(document.getElementById('b-inv2').value)||0;
+  var maxIp=100-t;
+  var minPost=inv/(maxIp/100);
+  document.getElementById('r-post').textContent=fmt(minPost);
+  document.getElementById('r-pre').textContent=fmt(minPost-inv);
+  document.getElementById('r-inv-pct').textContent=fp(maxIp);
+}
+
+function calcOption(){
+  var pre=parseFloat(document.getElementById('op-pre').value)||100;
+  var inv=parseFloat(document.getElementById('op-inv').value)||20;
+  var pool=parseFloat(document.getElementById('op-pool').value)||10;
+  var post=pre+inv;
+  var ipA=(inv/post)*100;
+  var faA=100-ipA-pool;
+  document.getElementById('op-a-inv').textContent=fp(ipA);
+  document.getElementById('op-a-pool').textContent=fp(pool);
+  document.getElementById('op-a-founder').textContent=fp(faA);
+  var effPre=pre*(1-pool/100);
+  var effPost=effPre+inv;
+  var ipB=(inv/effPost)*100;
+  var faB=100-ipB-pool;
+  document.getElementById('op-b-inv').textContent=fp(ipB);
+  document.getElementById('op-b-pool').textContent=fp(pool);
+  document.getElementById('op-b-founder').textContent=fp(faB);
+  var diff=Math.abs(faA-faB);
+  document.getElementById('op-diff-box').innerHTML=diff>0.05
+    ?'<div class="warn">프리머니 기준 옵션 풀은 창업자 지분을 약 '+fp(diff)+' 추가 희석합니다. 포스트머니 기준으로 협상하거나 프리머니를 '+fmt(pre*pool/100)+' 이상 올려서 요구하세요.</div>':'';
+}
+
+function calcExit(){
+  var inv=parseFloat(document.getElementById('ex-inv').value)||50;
+  var lp=parseFloat(document.getElementById('ex-lp').value)||1;
+  var fp2=parseFloat(document.getElementById('ex-founder').value)||60;
+  var ip=parseFloat(document.getElementById('ex-inv-pct').value)||25;
+  var type=document.getElementById('ex-type').value;
+  var lpA=inv*lp;
+  var rows='';
+  [80,100,150,200,300,500].forEach(function(exit){
+    var ir,fr;
+    if(type==='non'){
+      ir=Math.max(lpA,exit*ip/100);
+      fr=ir===lpA?(exit-lpA)*fp2/100:exit*fp2/100;
+    } else {
+      ir=Math.min(lpA,exit)+Math.max(0,exit-lpA)*ip/100;
+      fr=Math.max(0,exit-lpA)*fp2/100;
+    }
+    fr=Math.max(0,fr);
+    var badge=fr<=0?'<span class="badge br">0원</span>':exit<inv*1.5?'<span class="badge ba">보통</span>':'<span class="badge bg">양호</span>';
+    rows+='<tr><td>'+fmt(exit)+'</td><td class="num">'+fmt(Math.round(ir*10)/10)+'</td><td class="num" style="font-weight:600;color:#1a56db">'+fmt(Math.round(fr*10)/10)+'</td><td>'+badge+'</td></tr>';
+  });
+  document.getElementById('ex-table').innerHTML=rows;
+  calcExitReverse();
+}
+
+function calcExitReverse(){
+  var inv=parseFloat(document.getElementById('ex-inv').value)||50;
+  var lp=parseFloat(document.getElementById('ex-lp').value)||1;
+  var fp2=parseFloat(document.getElementById('ex-founder').value)||60;
+  var ip=parseFloat(document.getElementById('ex-inv-pct').value)||25;
+  var type=document.getElementById('ex-type').value;
+  var target=parseFloat(document.getElementById('ex-target').value)||100;
+  var lpA=inv*lp;
+  var minExit=lpA+target/(fp2/100);
+  var ir=type==='non'?Math.max(lpA,minExit*ip/100):lpA+(minExit-lpA)*ip/100;
+  var moic=ir/inv;
+  document.getElementById('ex-min-exit').textContent=fmt(Math.round(minExit*10)/10);
+  document.getElementById('ex-inv-recv').textContent=fmt(Math.round(ir*10)/10);
+  document.getElementById('ex-moic').textContent=(Math.round(moic*10)/10).toFixed(1)+'x';
+}
+
+function calcMulti(){
+  var init=parseFloat(document.getElementById('ml-init').value)||100;
+  var pool=parseFloat(document.getElementById('ml-pool').value)||10;
+  var seed=parseFloat(document.getElementById('ml-seed').value)||20;
+  var a=parseFloat(document.getElementById('ml-a').value)||20;
+  var b=parseFloat(document.getElementById('ml-b').value)||20;
+  var ap=init-pool;
+  var as2=ap*(1-seed/100);
+  var aA=as2*(1-a/100);
+  var aB=aA*(1-b/100);
+  var steps=[
+    {l:'설립',e:'창업자 초기 지분',v:init},
+    {l:'옵션 풀 생성',e:'ESOP '+pool+'% 생성',v:ap},
+    {l:'시드 라운드',e:'투자자 '+seed+'% 희석',v:as2},
+    {l:'시리즈 A',e:'투자자 '+a+'% 희석',v:aA},
+    {l:'시리즈 B',e:'투자자 '+b+'% 희석',v:aB}
+  ];
+  var rows='';
+  steps.forEach(function(s){
+    var badge=s.v>=50?'<span class="badge bg">안전</span>':s.v>=30?'<span class="badge ba">주의</span>':'<span class="badge br">위험</span>';
+    rows+='<tr><td>'+s.l+'</td><td>'+s.e+'</td><td class="num" style="font-weight:600">'+fp(Math.round(s.v*10)/10)+'</td><td>'+badge+'</td></tr>';
+  });
+  document.getElementById('ml-table').innerHTML=rows;
+  calcMultiReverse();
+}
+
+function calcMultiReverse(){
+  var init=parseFloat(document.getElementById('ml-init').value)||100;
+  var pool=parseFloat(document.getElementById('ml-pool').value)||10;
+  var target=parseFloat(document.getElementById('ml-target').value)||50;
+  var ap=init-pool;
+  if(ap<=0||target<=0){document.getElementById('ml-max-dil').textContent='불가';return;}
+  var r=Math.pow(target/ap,1/3);
+  var maxD=(1-r)*100;
+  document.getElementById('ml-max-dil').textContent=maxD>0?fp(Math.round(maxD*10)/10):'불가';
+  document.getElementById('ml-warn').innerHTML=maxD>0&&maxD<=25
+    ?'<div class="warn" style="margin-top:8px">목표 달성을 위해 라운드당 희석률을 '+fp(Math.round(maxD*10)/10)+' 이하로 유지해야 합니다. 2025 시장 중위(18~19%)와 비교해 협상 여지를 확인하세요.</div>':'';
+}
+
+calcBasic();calcReverse();calcOption();calcExit();calcMulti();
+</script>
+</body>
+</html>
